@@ -37,7 +37,7 @@
             <configuration>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>camel.LogAlarms</mainClass>
+                  <mainClass>org.csstudio.camel.LogAlarms</mainClass>
                 </transformer>
               </transformers>
             </configuration>

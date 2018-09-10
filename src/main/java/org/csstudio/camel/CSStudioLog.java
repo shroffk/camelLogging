@@ -1,4 +1,4 @@
-package camel;
+package org.csstudio.camel;
 
 import javax.jms.ConnectionFactory;
 
