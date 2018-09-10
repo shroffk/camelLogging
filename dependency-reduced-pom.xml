@@ -18,7 +18,7 @@
             <configuration>
               <transformers>
                 <transformer>
-                  <mainClass>camel.LogAlarms</mainClass>
+                  <mainClass>org.csstudio.camel.LogAlarms</mainClass>
                 </transformer>
               </transformers>
             </configuration>

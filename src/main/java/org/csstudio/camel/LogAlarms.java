@@ -1,5 +1,11 @@
 package org.csstudio.camel;
 
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Properties;
+import java.util.stream.Collectors;
+
 import javax.jms.ConnectionFactory;
 
 import org.apache.activemq.ActiveMQConnectionFactory;
@@ -11,34 +17,50 @@ import org.apache.camel.ProducerTemplate;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.jms.JmsComponent;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.log4j.Logger;
 
 public class LogAlarms {
+	private static final Logger logger = Logger.getLogger(LogAlarms.class.getName());
 
 	public static void main(String[] args) {
-		CamelContext context = new DefaultCamelContext();
-		ConnectionFactory connectionFactory = new ActiveMQConnectionFactory("tcp://beast.cs.nsls2.local:61616");
 
-		context.addComponent("test-jms", JmsComponent.jmsComponentAutoAcknowledge(connectionFactory));
+		Properties prop = new Properties();
+		try {
+			prop.load(LogAlarms.class.getResourceAsStream("/log_alarms.properties"));
+		} catch (IOException e1) {
+			logger.warn("Failed to read configurations", e1);
+		}
+		String jms_uri = prop.getProperty("best_jms", "tcp://beast.cs.nsls2.local:61616");
+		String elastic_uri = prop.getProperty("elastic_uri", "webdev.cs.nsls2.local");
+		String component_name = prop.getProperty("component_name", "alarm_jms");
+		String topics = prop.getProperty("topic", "NSLS2_ENG");
+		List<String> alarm_topics = Arrays.asList(topics.split(",")).stream().map(String::trim).collect(Collectors.toList());
+				
+		CamelContext context = new DefaultCamelContext();
+		ConnectionFactory connectionFactory = new ActiveMQConnectionFactory(jms_uri);
+
+		context.addComponent(component_name, JmsComponent.jmsComponentAutoAcknowledge(connectionFactory));
 
 		try {
 			context.addRoutes(new RouteBuilder() {
 				public void configure() {
 					// Production server
-					from("test-jms:topic:NSLS2_ENG_TALK").to(
-							"elasticsearch://elasticsearch?ip=webdev.cs.nsls2.local&operation=INDEX&indexName=alarms_eng&indexType=BEAST");
-					from("test-jms:topic:NSLS2_ENG_SERVER").filter().simple("${body[TEXT]} != \"IDLE\"").filter()
-							.simple("${body[TEXT]} != \"IDLE_MAINTENANCE\"")
-							.to("elasticsearch://elasticsearch?ip=webdev.cs.nsls2.local&operation=INDEX&indexName=alarms_eng&indexType=BEAST");
-					from("test-jms:topic:NSLS2_ENG_CLIENT").to(
-							"elasticsearch://elasticsearch?ip=webdev.cs.nsls2.local&operation=INDEX&indexName=alarms_eng&indexType=BEAST");
+					for (String alarm_topic : alarm_topics) {
+						String from = component_name+":topic:"+alarm_topic;
+						String to = "elasticsearch://elasticsearch?ip="+elastic_uri+"&operation=INDEX&indexName="+alarm_topic.toLowerCase()+"&indexType=BEAST";
+						// Index the talk messages
+						from(from+"_TALK")
+						.to(to);
+						// Filter and index the server messages
+						from(from+"_SERVER")
+								.filter().simple("${body[TEXT]} != \"IDLE\"")
+								.filter().simple("${body[TEXT]} != \"IDLE_MAINTENANCE\"")
+								.to(to);
+						// Index the client messages
+						from(from+"_CLIENT")
+						.to(to);
 
-					from("test-jms:topic:NSLS2_OPR_TALK").to(
-							"elasticsearch://elasticsearch?ip=webdev.cs.nsls2.local&operation=INDEX&indexName=alarms_opr&indexType=BEAST");
-					from("test-jms:topic:NSLS2_OPR_SERVER").filter().simple("${body[TEXT]} != \"IDLE\"").filter()
-							.simple("${body[TEXT]} != \"IDLE_MAINTENANCE\"")
-							.to("elasticsearch://elasticsearch?ip=webdev.cs.nsls2.local&operation=INDEX&indexName=alarms_opr&indexType=BEAST");
-					from("test-jms:topic:NSLS2_OPR_CLIENT").to(
-							"elasticsearch://elasticsearch?ip=webdev.cs.nsls2.local&operation=INDEX&indexName=alarms_opr&indexType=BEAST");
+					}
 
 //					// Test Topics
 //					from("test-jms:topic:LOG").filter(body().not().contains("kunal")).to(
